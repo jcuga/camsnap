@@ -4,11 +4,11 @@ import (
 	"flag"
 	"fmt"
 	"github.com/blackjack/webcam"
+	"io/ioutil"
 	"log"
 	"os"
 	"sort"
 	"time"
-  "image/jpeg"
 )
 
 func main() {
@@ -32,13 +32,13 @@ func main() {
 }
 
 func camsnap(videoDev, outFile string, updatePeriodeSec uint, verwriteLast, onlyOnce bool) error {
-  log.Printf("DEBUG 1") // TODO: remove
+	log.Printf("DEBUG 1") // TODO: remove
 	cam, err := webcam.Open(videoDev)
 	if err != nil {
 		return err
 	}
 	defer cam.Close()
-  log.Printf("DEBUG 2") // TODO: remove
+	log.Printf("DEBUG 2") // TODO: remove
 	format_desc := cam.GetSupportedFormats()
 	var formats []webcam.PixelFormat
 	for f := range format_desc {
@@ -71,13 +71,12 @@ func camsnap(videoDev, outFile string, updatePeriodeSec uint, verwriteLast, only
 		fmt.Fprintf(os.Stderr, "Resulting image format: %s (%dx%d)\n", format_desc[f], w, h)
 	}
 
-  // TODO: looks like control C breaks the subsequent attempts because
-  // camera isn't closed i guess.
-  // TODO: add signal handler and have camera global to clean up...
-  // TODO: or see if any other way to fix this.
-  // TODO: workaround, unplug and replug camera (if usb/not built in...)
-  // TODO: confirm Control C prevents defer from firing
-
+	// TODO: looks like control C breaks the subsequent attempts because
+	// camera isn't closed i guess.
+	// TODO: add signal handler and have camera global to clean up...
+	// TODO: or see if any other way to fix this.
+	// TODO: workaround, unplug and replug camera (if usb/not built in...)
+	// TODO: confirm Control C prevents defer from firing
 
 	err = cam.StartStreaming()
 	if err != nil {
@@ -98,21 +97,22 @@ func camsnap(videoDev, outFile string, updatePeriodeSec uint, verwriteLast, only
 		if len(frame) != 0 {
 			fmt.Printf("Got frame! with len: %v\n", len(frame))
 
-      // TODO: place this in own func that saves to file with optional overwrite
+			// NOTE: writing frame bytes to file for now, need to inspect and figure out how to decode
+			fileName := "./frame.yuv" // TODO: use outfile instead?
+			if err := ioutil.WriteFile(fileName, frame, 0644); err == nil {
+				log.Printf("Saved to file: %v", fileName)
+			} else {
+				log.Fatalf("Failed to save frame to file. error: %v", err)
+			}
 
-      // NOTE: we have a byte[] of an image in a format.
-      // TODO: logic to take format A and convert to format B for file writing
+			// TODO: place this in own func that saves to file with optional overwrite
 
-      // TODO: for now, hard coded assuming YUYV since my example uses that
+			// NOTE: we have a byte[] of an image in a format.
+			// TODO: logic to take format A and convert to format B for file writing
 
+			// TODO: for now, hard coded assuming YUYV since my example uses that
 
-      img := image.NewYCbCr(image.Rect(0, 0, w, h), image.YCbCrSubsampleRatio420)
-      options := &Options{Quality: 90}
-  		if err := jpeg.Encode(ioutil.Discard, img, options) {
-        log.Printf("Failed to encode jpeg: %v", err)
-        continue
-      }
-
+			// TODO: sample ratio needs to be gleamed from camera as well (it gets printed out )
 
 		} else if err != nil {
 			log.Printf("Error reading frame: %v", err)
