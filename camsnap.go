@@ -16,7 +16,7 @@ func main() {
 	videoDev := flag.String("cam", "/dev/video0", "Linux /dev/ for camera.")
 	outFile := flag.String("file", "./camera_frame.jpeg", "Output image file location.")
 	onlyOnce := flag.Bool("once", false, "Only take one image capture and exit.")
-	overwriteLast := flag.Bool("overwrite", false, "Overwrite previous image capture. If not overwriting, images will have 'file' filename plus timestamp.")
+	dontOverwriteLast := flag.Bool("no-overwrite", false, "Don't overwrite previous image capture. If not overwriting, images will have 'file' filename plus timestamp.")
 	updatePeriodSecPtr := flag.Uint("upsec", 10, "How many seconds between updates.")
 	flag.Parse()
 	if *updatePeriodSecPtr <= 0 {
@@ -24,9 +24,9 @@ func main() {
 		os.Exit(1)
 	}
 	log.Printf("Starting with cam: %v, file: %v, overwrite: %v, upsec: %v, once: %v\n",
-		*videoDev, *outFile, *overwriteLast, *updatePeriodSecPtr, *onlyOnce)
+		*videoDev, *outFile, !(*dontOverwriteLast), *updatePeriodSecPtr, *onlyOnce)
 	// take picture immediately
-	if err := camsnap(*videoDev, *outFile, *updatePeriodSecPtr, *overwriteLast, *onlyOnce); err != nil {
+	if err := camsnap(*videoDev, *outFile, *updatePeriodSecPtr, !(*dontOverwriteLast), *onlyOnce); err != nil {
 		log.Fatalf("Error setting up image capture: %v", err)
 	}
 	log.Printf("All done.")
