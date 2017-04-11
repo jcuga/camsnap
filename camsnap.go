@@ -4,7 +4,8 @@ import (
 	"flag"
 	"fmt"
 	"github.com/blackjack/webcam"
-	"io/ioutil"
+	"image"
+	"image/jpeg"
 	"log"
 	"os"
 	"sort"
@@ -13,7 +14,7 @@ import (
 
 func main() {
 	videoDev := flag.String("cam", "/dev/video0", "Linux /dev/ for camera.")
-	outFile := flag.String("file", "./camera.png", "Output image file location.")
+	outFile := flag.String("file", "./camera_frame.jpeg", "Output image file location.")
 	onlyOnce := flag.Bool("once", false, "Only take one image capture and exit.")
 	overwriteLast := flag.Bool("overwrite", false, "Overwrite previous image capture. If not overwriting, images will have 'file' filename plus timestamp.")
 	updatePeriodSecPtr := flag.Uint("upsec", 10, "How many seconds between updates.")
@@ -31,14 +32,12 @@ func main() {
 	log.Printf("All done.")
 }
 
-func camsnap(videoDev, outFile string, updatePeriodeSec uint, verwriteLast, onlyOnce bool) error {
-	log.Printf("DEBUG 1") // TODO: remove
+func camsnap(videoDev, outFile string, updatePeriodeSec uint, overwriteLast, onlyOnce bool) error {
 	cam, err := webcam.Open(videoDev)
 	if err != nil {
 		return err
 	}
 	defer cam.Close()
-	log.Printf("DEBUG 2") // TODO: remove
 	format_desc := cam.GetSupportedFormats()
 	var formats []webcam.PixelFormat
 	for f := range format_desc {
@@ -96,28 +95,32 @@ func camsnap(videoDev, outFile string, updatePeriodeSec uint, verwriteLast, only
 		frame, err := cam.ReadFrame()
 		if len(frame) != 0 {
 			fmt.Printf("Got frame! with len: %v\n", len(frame))
+			img, imgErr := toImage(frame)
+			if imgErr == nil {
 
-			// NOTE: writing frame bytes to file for now, need to inspect and figure out how to decode
-			fileName := "./frame.yuv" // TODO: use outfile instead?
-			if err := ioutil.WriteFile(fileName, frame, 0644); err == nil {
-				log.Printf("Saved to file: %v", fileName)
+				fileName := outFile
+				if !overwriteLast {
+					// save with timestamp appended to desired name
+					fileName += "__" + time.Now().Format(time.RFC3339)
+				}
+
+				out, err := os.Create(fileName)
+				if err != nil {
+					log.Printf("ERROR trying to create output file.  filename: %v, error: %v", fileName, err)
+				} else {
+					defer out.Close()
+					options := &jpeg.Options{Quality: 90}
+					jpeg.Encode(out, img, options)
+				}
+
 			} else {
-				log.Fatalf("Failed to save frame to file. error: %v", err)
+				log.Printf("ERROR trying to turn frame bytes into YCbCr image: %v.", imgErr)
 			}
 
-			// TODO: place this in own func that saves to file with optional overwrite
-
-			// NOTE: we have a byte[] of an image in a format.
-			// TODO: logic to take format A and convert to format B for file writing
-
-			// TODO: for now, hard coded assuming YUYV since my example uses that
-
-			// TODO: sample ratio needs to be gleamed from camera as well (it gets printed out )
-
 		} else if err != nil {
-			log.Printf("Error reading frame: %v", err)
-			return err
+			log.Printf("ERROR reading frame: %v", err)
 		}
+
 		if onlyOnce {
 			log.Printf("Finished")
 			return nil
@@ -130,6 +133,50 @@ func camsnap(videoDev, outFile string, updatePeriodeSec uint, verwriteLast, only
 		}
 	}
 	return nil
+}
+
+func toImage(frame []byte) (*image.YCbCr, error) {
+	if len(frame)%4 != 0 {
+		return nil, fmt.Errorf("Frame len was not divisible by 4.  Got len: %v", len(frame))
+	}
+	// NOTE: since 422 ratio (hard coded assumption thats our file btw!)
+	// the len y = 1/2 of all bytes, cb and cr are 1/4 each
+	yBytes := make([]byte, 0)
+	cbBytes := make([]byte, 0)
+	crBytes := make([]byte, 0)
+	for index, value := range frame {
+		// Byte format is for each 4 byte chunk
+		// Y0,U0,Y1,V1 ... Y2,U2,Y3,V2, ... Y4,Y4,Y5,V5 etc...
+		switch index % 4 {
+		case 0:
+			fallthrough
+		case 2:
+			// Y values
+			yBytes = append(yBytes, value)
+		case 1:
+			// U values
+			cbBytes = append(cbBytes, value) // TODO: U == cb? think so...
+		case 3:
+			// V values
+			crBytes = append(crBytes, value) // TODO: V == cr? think so...
+		}
+
+	}
+	// TODO: check and log fatal if len y is not double len cb and cr (those are equal)
+	r := image.Rect(0, 0, 640, 480) // TODO: off by one? should be 639 and 479 since zeros included?
+	// NOTE: reverse engineered ctor values from image package
+	// especially the stride values.  hard coded assumption of 640x480 image with 422 ratio!
+	// (which should be what the webcame im testing with uses...)
+	ycbcrImg := &image.YCbCr{
+		Y:              yBytes,
+		Cb:             cbBytes,
+		Cr:             crBytes,
+		SubsampleRatio: image.YCbCrSubsampleRatio422,
+		YStride:        640,
+		CStride:        320,
+		Rect:           r,
+	}
+	return ycbcrImg, nil
 }
 
 // ---------- Stuff below here was from blackjack/webcam example: ------------

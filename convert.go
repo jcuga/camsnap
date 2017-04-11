@@ -74,6 +74,7 @@ func main() {
 	options := &jpeg.Options{Quality: 90}
 	jpeg.Encode(out, ycbcrImg, options)
 
+	fmt.Printf("Done")
 	// TODO: if this works, post helpful links (on byte format, the gov and the fourcc sites) on github
 	// TODO: more polished version?
 	// TODO: program that tries all possible types? or guesses/determines?
