@@ -82,7 +82,10 @@ func camsnap(videoDev, outFile string, updatePeriodeSec uint, overwriteLast, onl
 		return err
 	}
 	timeout := uint32(3) // 3 seconds
+	currentWaitStart := time.Now()
 	for {
+		// the library doesnt support frame grabs, just streaming.
+		// so always grab next but only save when we care.
 		err = cam.WaitForFrame(timeout)
 		switch err.(type) {
 		case nil:
@@ -93,28 +96,33 @@ func camsnap(videoDev, outFile string, updatePeriodeSec uint, overwriteLast, onl
 			return err
 		}
 		frame, err := cam.ReadFrame()
+
 		if len(frame) != 0 {
-			fmt.Printf("Got frame! with len: %v\n", len(frame))
-			img, imgErr := toImage(frame)
-			if imgErr == nil {
 
-				fileName := outFile
-				if !overwriteLast {
-					// save with timestamp appended to desired name
-					fileName += "__" + time.Now().Format(time.RFC3339)
-				}
-
-				out, err := os.Create(fileName)
-				if err != nil {
-					log.Printf("ERROR trying to create output file.  filename: %v, error: %v", fileName, err)
+			if time.Now().After(currentWaitStart.Add(time.Second * time.Duration(updatePeriodeSec))) {
+				// reset countdown.
+				currentWaitStart = time.Now()
+				// save frame
+				fmt.Printf("Got frame! with len: %v\n", len(frame))
+				img, imgErr := toImage(frame)
+				if imgErr == nil {
+					fileName := outFile
+					if !overwriteLast {
+						// save with timestamp appended to desired name
+						fileName += "__" + time.Now().Format(time.RFC3339)
+					}
+					out, err := os.Create(fileName)
+					if err != nil {
+						log.Printf("ERROR trying to create output file.  filename: %v, error: %v", fileName, err)
+					} else {
+						defer out.Close()
+						options := &jpeg.Options{Quality: 90}
+						jpeg.Encode(out, img, options)
+					}
 				} else {
-					defer out.Close()
-					options := &jpeg.Options{Quality: 90}
-					jpeg.Encode(out, img, options)
+					log.Printf("ERROR trying to turn frame bytes into YCbCr image: %v.", imgErr)
 				}
 
-			} else {
-				log.Printf("ERROR trying to turn frame bytes into YCbCr image: %v.", imgErr)
 			}
 
 		} else if err != nil {
@@ -123,13 +131,9 @@ func camsnap(videoDev, outFile string, updatePeriodeSec uint, overwriteLast, onl
 
 		if onlyOnce {
 			log.Printf("Finished")
+			// NOTE: library does not support streaming.
+			// see forks on how to do this.  prehaps fork and add stop stream and grab frame features???
 			return nil
-		} else {
-			// wait until next time
-			select {
-			case <-time.After(time.Second * time.Duration(updatePeriodeSec)):
-				// Nothing to do, just introducing delay...
-			}
 		}
 	}
 	return nil
